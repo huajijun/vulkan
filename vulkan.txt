@@ -1,0 +1,106 @@
+vulkan 是 处理函数
+GLFW 是show 函数
+初始化 GLFW环境， 由于一开始GKFW是给opengl用的 所以要取消OPENGL相关的API 
+之后就是建立窗口，已经关闭窗口，和释放初始化环境的资源
+
+总代码块：
+	initWindow();
+	initVulkan();
+    mainLoop();
+    cleanup();
+
+
+    initWindow():
+    	initWindow（）
+    	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); 
+    	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    	window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
+    		初始化一个 窗口，但是关闭OPENGL的上下文环境，关闭调整窗口大小的功能，之后在创建想要的窗口
+
+
+    initVulkan():
+    	createInstance(); 实例是您的应用程序和Vulkan库之间的连接，创建该实例涉及向驱动程序指定有关您的应用程序的一些详细信息
+    		创建实例，之后就是填写和应用程序相关的信息，这个信息是给驱动程序使用的
+    	VkApplicationInfo appInfo{};
+		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		appInfo.pApplicationName = "Hello Triangle";
+		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		appInfo.pEngineName = "No Engine";
+		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		appInfo.apiVersion = VK_API_VERSION_1_0;
+
+		Vulkan中的许多信息都是通过结构而不是函数参数传递的，我们将不得不再填充一个结构以提供足够的信息来创建实例
+		VkInstanceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		createInfo.pApplicationInfo = &appInfo;
+
+		Vulkan是一个与平台无关的API，这意味着您需要扩展才能与窗口系统对接。GLFW有一个方便的内置函数，该函数返回执行我们可以传递给struct的扩展名
+		uint32_t glfwExtensionCount = 0;
+		const char** glfwExtensions;
+
+		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+		createInfo.enabledExtensionCount = glfwExtensionCount;
+		createInfo.ppEnabledExtensionNames = glfwExtensions;
+		VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+		最后我们把我们配置的信息和实例连接起来
+
+		重要的：
+			createInfo， instance
+
+		pickPhysicalDevice() 选择具体的物理显卡设备：
+				VkPhysicalDevice physicalDevice = VK_NULL_HANDLE; 显卡指针
+				vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr); 计算有多少个支持instance中配置信息的显卡数量
+
+				std::vector<VkPhysicalDevice> devices(deviceCount);
+				vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+				分配一个数组来存储所有有用的显卡
+
+				在进行评估选择一个最好的显卡来使用：
+					标准：是否适合我们的需求
+						1、查询基本设备属性，例如名称，类型和受支持的Vulkan版本vkGetPhysicalDeviceProperties
+							VkPhysicalDeviceProperties deviceProperties;
+							vkGetPhysicalDeviceProperties(device, &deviceProperties);
+						2.查询对可选功能的支持：纹理压缩，64位浮点和多视口渲染（对VR有用
+							VkPhysicalDeviceFeatures deviceFeatures;
+							vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+					选择有着色器的专用显卡
+					bool isDeviceSuitable(VkPhysicalDevice device) {
+						    VkPhysicalDeviceProperties deviceProperties;
+						    VkPhysicalDeviceFeatures deviceFeatures;
+						    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+						    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+						    return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+						           deviceFeatures.geometryShader;
+						}
+						上面是查看有那些功能
+						下面是操作这么功能
+		Vulkan中几乎所有的操作，从绘图到上传纹理的任何操作，都需要将命令提交到队列中。有不同类型的队列源自不同的 队列系列，并且每个队列系列仅允许命令的子集。例如，可能有一个仅允许处理计算命令的队列系列
+		，或者仅允许与内存传输相关的命令的队列系列。
+		findQueueFamilies，以查找所需的所有队列系列。
+		uint32_t findQueueFamilies(VkPhysicalDevice device) {
+		    // Logic to find graphics queue family
+		}
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+		查找这些功能，并全部保存起来后面使用
+		该VkQueueFamilyProperties结构包含有关队列系列的一些详细信息，包括支持的操作类型以及可以基于该系列创建的队列数。我们需要找到至少一个支持的队列族VK_QUEUE_GRAPHICS_BIT
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies) {
+		    if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+		        indices.graphicsFamily = i;
+		    }
+
+		    i++;
+		}
+		这下我们找到了我们需要的显卡了（支持我们想要功能的显卡）
+
+		逻辑设备创建过程类似于实例创建过程，并描述了我们要使用的功能（主要是我们要使用那些功能把这些功能拿出来）现在，我们已经查询了哪些队列系列可用，因此还需要指定要创建的队列。
+		如果您有不同的要求，甚至可以从同一物理设备创建多个逻辑设备
+
+		createLogicalDevice()创建逻辑设备
+		指定要创建的队列 ： 指定要使用的命令
