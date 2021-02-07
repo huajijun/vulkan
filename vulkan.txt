@@ -104,3 +104,90 @@ GLFW 是show 函数
 
 		createLogicalDevice()创建逻辑设备
 		指定要创建的队列 ： 指定要使用的命令
+
+		逻辑设备中继承很多功能，
+		我们通过获取其中一个句柄来使用这个功能
+
+
+		因为vulkan是 于平台无关的代码，所以如果要和每个平台 打交到就必须有一个接口可以和每个平台都连接，其中WSL就是和windows平台的接口连接的接口
+
+		先建立上层的连接，也就是vulkan和windows窗口之间的联系，后面建立vulkan和底层驱动之间的联系
+
+
+		frame缓存：
+			首先检查底层的物理设备是否会支持检查交换链支持。
+			由于这个不是vulkan的核心功能，所以要启动vulkan 的扩展功能。
+
+
+			获取物理设备支持检查交换链支持的详细信息：
+				比如：
+					基本表面功能（交换链中图像的最小/最大数量，图像的最小/最大宽度和高度）
+					表面格式（像素格式，色彩空间）
+					可用的演示模式
+
+			由于窗面的显示和缓存的显示是不一样的（一个是windows，一个是底层驱动支持的）
+			vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
+			获取表面的功能
+			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+			获取格式
+			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+			获取支持的模式
+
+			之后就是设置这3 个参数让表面和驱动处于最合适的状态
+
+			VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) 
+			{
+			    for (const auto& availableFormat : availableFormats) {
+			        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+			            return availableFormat;
+			        }
+			    }
+
+			    return availableFormats[0];
+			}
+
+			VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) 
+			{
+			    for (const auto& availablePresentMode : availablePresentModes) {
+			        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+			            return availablePresentMode;
+			        }
+			    }
+
+			    return VK_PRESENT_MODE_FIFO_KHR;
+			}
+
+			VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) 
+			{
+			    if (capabilities.currentExtent.width != UINT32_MAX) {
+			        return capabilities.currentExtent;
+			    } else {
+			        int width, height;
+			        glfwGetFramebufferSize(window, &width, &height);
+
+			        VkExtent2D actualExtent = {
+			            static_cast<uint32_t>(width),
+			            static_cast<uint32_t>(height)
+			        };
+
+			        actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+			        actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+
+			        return actualExtent;
+			    }
+			}
+
+			选择 窗口和交换链已经适配完成了
+
+			后面就是如何在交换链中操作图片了
+
+			vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+			swapChainImages.resize(imageCount);
+			vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+			获取处理的句柄，这个是 原图像的句柄
+			要VkImage在渲染管道中使用任何对象（包括交换链中的VkImageView对象），我们必须创建一个对象。图像视图实际上是图像的视图。它描述了如何访问图像以及访问图像的哪一部分，例如，是否应将其视为2D纹理深度纹理而没有任何映射层次。
+			std::vector<VkImageView> swapChainImageViews;
+
+			图像视图就关于如何处理每一幅图像，如颜色，纹理类型，如何解释数据格式
