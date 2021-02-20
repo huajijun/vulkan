@@ -1,0 +1,7 @@
+OBJECT :=isp.cpp
+CUR_OBJS=$(patsubst %.cpp, %.o, $(OBJECT))
+prefix_o = $(foreach tmp, $(CUR_OBJS), $(addprefix $(BUILD_DIR), *.o))
+
+all:$(CUR_OBJS) 
+$(CUR_OBJS):%.o : %.cpp
+	@$(G++) $(INCLUDES) $(C_FLAGS) -c $^ -o $(BUILD_DIR)/$@
